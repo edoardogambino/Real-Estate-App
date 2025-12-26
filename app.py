@@ -6,7 +6,7 @@ from fpdf import FPDF
 import uuid
 from datetime import datetime, timedelta, date
 import streamlit_authenticator as stauth
-import bcrypt  # We use this directly to avoid Hasher errors
+import bcrypt
 
 # ==========================================
 # 1. SETUP & PAGE CONFIG
@@ -18,28 +18,30 @@ st.set_page_config(
 )
 
 # ==========================================
-# 2. AUTHENTICATION (FIXED)
+# 2. AUTHENTICATION & USER DATABASE
 # ==========================================
 
-# Helper function to hash passwords reliably
+# Helper function to hash passwords
 def hash_pass(password):
     return bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
 
-# A. Define Users
+# Initialize User Database in Session State (Simulating a DB)
+if 'user_db' not in st.session_state:
+    st.session_state.user_db = {
+        'jsmith': {
+            'name': 'John Smith',
+            'password': hash_pass('abc')
+        },
+        'rbriggs': {
+            'name': 'Rebecca Briggs',
+            'password': hash_pass('def')
+        }
+    }
+
+# Build the Config Dictionary from our Session State DB
 config = {
     'credentials': {
-        'usernames': {
-            'jsmith': {
-                'name': 'John Smith',
-                # We hash "abc" immediately here
-                'password': hash_pass('abc')
-            },
-            'rbriggs': {
-                'name': 'Rebecca Briggs',
-                # We hash "def" immediately here
-                'password': hash_pass('def')
-            }
-        }
+        'usernames': st.session_state.user_db
     },
     'cookie': {
         'expiry_days': 30,
@@ -51,7 +53,7 @@ config = {
     }
 }
 
-# B. Initialize Authenticator
+# Initialize Authenticator
 authenticator = stauth.Authenticate(
     config['credentials'],
     config['cookie']['name'],
@@ -59,15 +61,41 @@ authenticator = stauth.Authenticate(
     config['cookie']['expiry_days']
 )
 
-# C. Login Widget
-authenticator.login()
+# --- LOGIN / SIGNUP TABS ---
+if st.session_state["authentication_status"] is not True:
+    # Create tabs for cleaner UI
+    tab_login, tab_signup = st.tabs(["Login", "Create Account"])
+    
+    with tab_login:
+        authenticator.login()
+        if st.session_state["authentication_status"] is False:
+            st.error('Username/password is incorrect')
+        elif st.session_state["authentication_status"] is None:
+            st.warning('Please enter your credentials')
 
-# D. CONTROL FLOW
-if st.session_state["authentication_status"] is False:
-    st.error('Username/password is incorrect')
-    st.stop()
-elif st.session_state["authentication_status"] is None:
-    st.warning('Please enter your username and password')
+    with tab_signup:
+        st.subheader("New User Registration")
+        with st.form("signup_form"):
+            new_name = st.text_input("Full Name")
+            new_user = st.text_input("Username")
+            new_pass = st.text_input("Password", type="password")
+            submitted = st.form_submit_button("Create Account")
+            
+            if submitted:
+                if new_user in st.session_state.user_db:
+                    st.error("Username already exists!")
+                elif not new_user or not new_pass:
+                    st.error("Please fill in all fields.")
+                else:
+                    # Add to our "Database"
+                    st.session_state.user_db[new_user] = {
+                        'name': new_name,
+                        'password': hash_pass(new_pass)
+                    }
+                    st.success("Account created! Go to the Login tab to sign in.")
+                    # We don't rerun immediately so the user sees the success message
+    
+    # STOP APP HERE IF NOT LOGGED IN
     st.stop()
 
 # ==========================================
